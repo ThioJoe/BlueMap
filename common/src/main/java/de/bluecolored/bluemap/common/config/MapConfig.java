@@ -157,7 +157,10 @@ public class MapConfig implements MapSettings {
         if (!markerSet.isJsonObject()) return markerSet;
 
         JsonObject markerSetObject = markerSet.getAsJsonObject();
-        JsonElement nestedMarkerSets = markerSetObject.get("markerSets");
+        JsonElement nestedMarkerSets = markerSetObject.get("marker-sets");
+        if (nestedMarkerSets != null) markerSetObject.add("marker-sets", normalizeMarkerSets(nestedMarkerSets));
+
+        nestedMarkerSets = markerSetObject.get("markerSets");
         if (nestedMarkerSets != null) markerSetObject.add("markerSets", normalizeMarkerSets(nestedMarkerSets));
         return markerSetObject;
     }
