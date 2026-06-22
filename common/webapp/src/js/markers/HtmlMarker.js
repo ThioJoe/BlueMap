@@ -103,6 +103,7 @@ export class HtmlMarker extends Marker {
      *      }}
      */
     updateFromData(markerData) {
+        super.updateFromData(markerData);
 
         // update position
         let pos = markerData.position || {};
@@ -131,7 +132,7 @@ export class HtmlMarker extends Marker {
         this.anchor.setY(anch.y || 0);
 
         // update html
-        if (this.element.innerHTML !== markerData.html){
+        if (markerData.html != null && this.element.innerHTML !== markerData.html){
             this.element.innerHTML = markerData.html;
         }
 

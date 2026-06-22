@@ -80,6 +80,7 @@ export class ObjectMarker extends Marker {
      *      }}
      */
     updateFromData(markerData) {
+        super.updateFromData(markerData);
 
         // update position
         let pos = markerData.position || {};

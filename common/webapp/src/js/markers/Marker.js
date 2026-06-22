@@ -24,6 +24,7 @@
  */
 import {MathUtils, Object3D, Vector3} from "three";
 import {reactive} from "vue";
+import {getLocalStorage, setLocalStorage} from "../Utils";
 
 export class Marker extends Object3D {
 
@@ -39,8 +40,13 @@ export class Marker extends Object3D {
             type: "marker",
             sorting: 0,
             listed: true,
+            toggleable: false,
+            defaultHide: false,
             position: this.position,
-            visible: this.visible
+            visible: this.visible,
+            saveState: () => {
+                setLocalStorage(this.localStorageKey("visible"), this.visible);
+            }
         });
 
         // redirect parent properties
@@ -60,7 +66,26 @@ export class Marker extends Object3D {
      * Updates this marker from the provided data object, usually parsed form json from a markers.json
      * @param markerData {object}
      */
-    updateFromData(markerData) {}
+    updateFromData(markerData) {
+        let wasToggleable = this.data.toggleable;
+        this.data.toggleable = !!markerData.toggleable;
+        this.data.defaultHide = !!markerData.defaultHidden;
+
+        if (this.data.toggleable && !wasToggleable) {
+            let storedVisible = getLocalStorage(this.localStorageKey("visible"));
+            if (storedVisible !== undefined) {
+                this.visible = !!storedVisible;
+            } else if (this.data.defaultHide) {
+                this.visible = false;
+            }
+        } else if (!this.data.toggleable) {
+            this.visible = true;
+        }
+    }
+
+    localStorageKey(key) {
+        return `markers.${this.parent?.data?.id || "root"}.${this.data.id}.${key}`;
+    }
 
     // -- helper methods --
 
