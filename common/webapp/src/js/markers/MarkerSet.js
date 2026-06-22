@@ -99,6 +99,7 @@ export class MarkerSet extends Scene {
     }
 
     updateMarkerSetsFromData(data = {}, ignore = []) {
+        data = MarkerSet.normalizeMarkerSetData(data);
         let updatedMarkerSets = new Set(ignore);
 
         // add & update MarkerSets
@@ -120,6 +121,16 @@ export class MarkerSet extends Scene {
                 this.remove(markerSet);
             }
         });
+    }
+
+    static normalizeMarkerSetData(data = {}) {
+        if (Array.isArray(data)) {
+            return Object.fromEntries(data
+                .filter(markerSetData => markerSetData && markerSetData.id)
+                .map(markerSetData => [markerSetData.id, markerSetData]));
+        }
+
+        return data || {};
     }
 
     updateMarkerSetFromData(markerSetId, data) {

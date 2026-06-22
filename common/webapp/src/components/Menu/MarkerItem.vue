@@ -5,7 +5,10 @@
         <img :src="'maps/' + mapId +  '/assets/playerheads/' + marker.playerUuid + '.png'" alt="playerhead" @error="steve">
       </div>
       <div class="info">
-        <div class="label">{{markerLabel}}</div>
+        <div class="marker-switch">
+          <div class="label">{{markerLabel}}</div>
+          <SwitchHandle :on="marker.visible" v-if="marker.toggleable" @click.stop="toggle"/>
+        </div>
         <div class="stats">
           <div v-if="appState.debug">
             {{marker.type}}-marker
@@ -31,8 +34,11 @@
 </template>
 
 <script>
+import SwitchHandle from "./SwitchHandle.vue";
+
 export default {
   name: "MarkerItem",
+  components: {SwitchHandle},
   props: {
     marker: Object,
   },
@@ -66,6 +72,12 @@ export default {
     }
   },
   methods: {
+    toggle() {
+      if (this.marker.toggleable) {
+        this.marker.visible = !this.marker.visible;
+        this.marker.saveState();
+      }
+    },
     async click(follow) {
       let cm = this.$bluemap.mapViewer.controlsManager;
       
@@ -140,8 +152,14 @@ export default {
 
       padding: 0.5em;
 
-      .label {
-        text-overflow: ellipsis;
+      .marker-switch {
+        display: flex;
+        align-items: center;
+
+        .label {
+          flex-grow: 1;
+          text-overflow: ellipsis;
+        }
       }
 
       .stats {

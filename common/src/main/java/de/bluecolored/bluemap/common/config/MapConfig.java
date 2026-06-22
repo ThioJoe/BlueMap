@@ -28,7 +28,10 @@ import com.flowpowered.math.vector.Vector2i;
 import com.google.gson.FieldNamingPolicy;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
+import com.google.gson.JsonParser;
 import com.google.gson.reflect.TypeToken;
 import de.bluecolored.bluemap.api.gson.MarkerGson;
 import de.bluecolored.bluemap.api.markers.MarkerSet;
@@ -115,12 +118,48 @@ public class MapConfig implements MapSettings {
             Gson gson = MarkerGson.addAdapters(new GsonBuilder())
                     .setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_DASHES)
                     .create();
+            JsonElement markerTree = JsonParser.parseString(markerJson);
             Type markerSetType = new TypeToken<Map<String, MarkerSet>>() {}.getType();
-            return gson.fromJson(markerJson, markerSetType);
+            return gson.fromJson(normalizeMarkerSets(markerTree), markerSetType);
         } catch (ConfigurateException | JsonParseException ex) {
             throw new ConfigurationException("Failed to parse marker-sets." +
                     "Make sure your marker-configuration for this map is valid.", ex);
         }
+    }
+
+    private static JsonElement normalizeMarkerSets(JsonElement markerSets) {
+        if (markerSets == null || markerSets.isJsonNull()) return markerSets;
+
+        if (markerSets.isJsonArray()) {
+            JsonObject normalized = new JsonObject();
+            for (JsonElement markerSet : markerSets.getAsJsonArray()) {
+                if (!markerSet.isJsonObject()) throw new JsonParseException("Marker-set arrays must contain objects.");
+                JsonObject markerSetObject = markerSet.getAsJsonObject();
+                JsonElement id = markerSetObject.get("id");
+                if (id == null || !id.isJsonPrimitive()) throw new JsonParseException("Marker-set array entries need an id.");
+                normalized.add(id.getAsString(), normalizeMarkerSet(markerSetObject));
+            }
+            return normalized;
+        }
+
+        if (markerSets.isJsonObject()) {
+            JsonObject normalized = new JsonObject();
+            for (Map.Entry<String, JsonElement> markerSet : markerSets.getAsJsonObject().entrySet()) {
+                normalized.add(markerSet.getKey(), normalizeMarkerSet(markerSet.getValue()));
+            }
+            return normalized;
+        }
+
+        throw new JsonParseException("Marker-sets must be an object or array.");
+    }
+
+    private static JsonElement normalizeMarkerSet(JsonElement markerSet) {
+        if (!markerSet.isJsonObject()) return markerSet;
+
+        JsonObject markerSetObject = markerSet.getAsJsonObject();
+        JsonElement nestedMarkerSets = markerSetObject.get("markerSets");
+        if (nestedMarkerSets != null) markerSetObject.add("markerSets", normalizeMarkerSets(nestedMarkerSets));
+        return markerSetObject;
     }
 
     // ## legacy check ##

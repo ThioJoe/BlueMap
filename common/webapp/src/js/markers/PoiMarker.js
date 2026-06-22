@@ -99,6 +99,7 @@ export class PoiMarker extends HtmlMarker {
      * }}
      */
     updateFromData(markerData) {
+        super.updateFromData(markerData);
 
         // update position
         let pos = markerData.position || {};
