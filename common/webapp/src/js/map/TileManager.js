@@ -58,6 +58,20 @@ export class TileManager {
         this.currentlyLoading = 0;
         this.loadTimeout = null;
 
+        /**
+         * Max bytes of tile geometry to keep cached in (video-)memory. Tiles that scroll out of
+         * view are retained instead of unloaded, until this budget is exceeded - then the least-
+         * recently-used retained tiles are evicted. 0 disables retention (original behaviour).
+         * @type {number}
+         */
+        this.maxCacheBytes = 0;
+
+        /** running total of the estimated geometry-bytes of all currently held tiles */
+        this.cacheBytes = 0;
+
+        /** retained (out-of-view) tiles, in least-recently-used-first order (Map keeps insertion order) */
+        this.retainedTiles = new Map();
+
         //map of loaded tiles
         this.tiles = new Map();
 
@@ -111,16 +125,44 @@ export class TileManager {
 
     removeFarTiles() {
         this.tiles.forEach((tile, hash, map) => {
-            if (
+            let far =
                 tile.x + this.viewDistanceX < this.centerTile.x ||
                 tile.x - this.viewDistanceX > this.centerTile.x ||
                 tile.z + this.viewDistanceZ < this.centerTile.y ||
-                tile.z - this.viewDistanceZ > this.centerTile.y
-            ) {
-                tile.unload();
-                map.delete(hash);
+                tile.z - this.viewDistanceZ > this.centerTile.y;
+
+            if (far) {
+                // retain loaded tiles in memory (up to maxCacheBytes) instead of unloading them,
+                // so panning back doesn't drop them to lowres. Tiles still loading, or that failed
+                // to load, are unloaded as before.
+                if (this.maxCacheBytes > 0 && tile.loaded && !tile.loading) {
+                    if (!this.retainedTiles.has(hash)) this.retainedTiles.set(hash, tile);
+                } else {
+                    tile.unload();
+                    map.delete(hash);
+                }
+            } else if (this.retainedTiles.has(hash)) {
+                // back in view: stop retaining and re-fetch to pick up any map changes
+                // (cheap 304 if unchanged); the current model stays visible until the new one loads
+                this.retainedTiles.delete(hash);
+                tile.refresh(this.tileLoader);
             }
         });
+
+        this.evictOverBudget();
+    }
+
+    /**
+     * Evicts least-recently-retained tiles until the cache is back within maxCacheBytes.
+     */
+    evictOverBudget() {
+        if (this.maxCacheBytes <= 0) return;
+        for (const [hash, tile] of this.retainedTiles) {
+            if (this.cacheBytes <= this.maxCacheBytes) break;
+            this.retainedTiles.delete(hash);
+            this.tiles.delete(hash);
+            tile.unload();
+        }
     }
 
     removeAllTiles() {
@@ -130,6 +172,8 @@ export class TileManager {
             tile.unload();
         });
         this.tiles.clear();
+        this.retainedTiles.clear();
+        this.cacheBytes = 0;
     }
 
     loadCloseTiles = () => {
@@ -213,6 +257,9 @@ export class TileManager {
     handleLoadedTile = tile => {
         this.tileMap.setTile(tile.x - this.centerTile.x + TileManager.tileMapHalfSize, tile.z - this.centerTile.y + TileManager.tileMapHalfSize, TileMap.LOADED);
 
+        tile.cacheBytes = TileManager.estimateTileBytes(tile.model);
+        this.cacheBytes += tile.cacheBytes;
+
         this.scene.add(tile.model);
         this.onTileLoad(tile);
     }
@@ -220,7 +267,27 @@ export class TileManager {
     handleUnloadedTile = tile => {
         this.tileMap.setTile(tile.x - this.centerTile.x + TileManager.tileMapHalfSize, tile.z - this.centerTile.y + TileManager.tileMapHalfSize, TileMap.EMPTY);
 
+        this.cacheBytes -= tile.cacheBytes || 0;
+        tile.cacheBytes = 0;
+
         this.scene.remove(tile.model);
         this.onTileUnload(tile);
+    }
+
+    /**
+     * Estimates the (video-)memory footprint of a tile's geometry from its buffer attributes.
+     * @param model {THREE.Mesh}
+     * @returns {number} estimated bytes
+     */
+    static estimateTileBytes(model) {
+        let bytes = 0;
+        let geometry = model?.geometry;
+        if (geometry) {
+            for (const attribute of Object.values(geometry.attributes)) {
+                if (attribute?.array) bytes += attribute.array.byteLength;
+            }
+            if (geometry.index?.array) bytes += geometry.index.array.byteLength;
+        }
+        return bytes;
     }
 }

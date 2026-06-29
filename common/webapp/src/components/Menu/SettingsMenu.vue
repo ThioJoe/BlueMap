@@ -28,6 +28,12 @@
       <SwitchButton :on="!appState.controls.pauseTileLoading" @action="appState.controls.pauseTileLoading = !appState.controls.pauseTileLoading; $bluemap.saveUserSettings()">{{ $t("renderDistance.loadHiresWhileMoving") }}</SwitchButton>
     </Group>
 
+    <Group :title="$t('hiresCache.title')">
+      <Slider :value="mapViewer.loadedHiresCacheSize" :min="0" :max="2048" :step="64" :formatter="cacheSizeFormatter"
+              @update="mapViewer.loadedHiresCacheSize = $event; $bluemap.mapViewer.applyHiresCacheSize()" @lazy="$bluemap.saveUserSettings()">{{ $t("hiresCache.maxSize") }}</Slider>
+      <div class="cache-usage">{{ $t("hiresCache.used") }}: <span class="value">{{ mapViewer.hiresCacheUsage }} MB</span></div>
+    </Group>
+
     <Group :title="$t('mapControls.title')">
       <SwitchButton :on="appState.controls.showZoomButtons" @action="appState.controls.showZoomButtons = !appState.controls.showZoomButtons; $bluemap.saveUserSettings()">{{ $t("mapControls.showZoomButtons") }}</SwitchButton>
     </Group>
@@ -123,6 +129,10 @@ name: "SettingsMenu",
       let f = parseFloat(value);
       return f === 0 ? this.$t("renderDistance.off") : f.toFixed(0);
     },
+    cacheSizeFormatter(value) {
+      let f = parseFloat(value);
+      return f === 0 ? this.$t("hiresCache.off") : f.toFixed(0) + " MB";
+    },
     async changeLanguage(lang) {
         await setLanguage(lang);
         this.$bluemap.updatePageAddress()
@@ -133,5 +143,12 @@ name: "SettingsMenu",
 </script>
 
 <style>
+.side-menu .cache-usage {
+  line-height: 2em;
+  padding: 0 0.5em;
 
+  > .value {
+    float: right;
+  }
+}
 </style>
