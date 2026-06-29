@@ -34,7 +34,9 @@ import lombok.NonNull;
 import lombok.Setter;
 import org.jetbrains.annotations.Nullable;
 
+import java.nio.charset.StandardCharsets;
 import java.util.function.Supplier;
+import java.util.zip.CRC32C;
 
 @Getter @Setter
 public class JsonDataRequestHandler implements HttpRequestHandler {
@@ -90,13 +92,11 @@ public class JsonDataRequestHandler implements HttpRequestHandler {
             //noinspection StringEquality - intentional identity check to skip re-hashing cached data
             if (data != lastData) {
                 lastData = data;
-                // 64-bit FNV-1a hash - cheap and with negligible collision risk for cache validation
-                long hash = 0xcbf29ce484222325L;
-                for (int i = 0; i < data.length(); i++) {
-                    hash ^= data.charAt(i);
-                    hash *= 0x100000001b3L;
-                }
-                lastETag = '"' + Long.toHexString(hash) + '"';
+                // CRC32C compiles to a hardware CRC instruction (SSE4.2 / ARM CRC) and runs in a single
+                // native call - this is only a cache-validator, so speed beats collision-resistance.
+                CRC32C crc = new CRC32C();
+                crc.update(data.getBytes(StandardCharsets.UTF_8));
+                lastETag = '"' + Long.toHexString(crc.getValue()) + '"';
             }
             return lastETag;
         }
