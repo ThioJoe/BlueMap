@@ -25,6 +25,7 @@
 package de.bluecolored.bluemap.common.web;
 
 import de.bluecolored.bluemap.api.ContentTypeRegistry;
+import de.bluecolored.bluemap.common.web.http.HttpHeader;
 import de.bluecolored.bluemap.common.web.http.HttpRequest;
 import de.bluecolored.bluemap.common.web.http.HttpRequestHandler;
 import de.bluecolored.bluemap.common.web.http.HttpResponse;
@@ -45,6 +46,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.util.NoSuchElementException;
 import java.util.concurrent.TimeUnit;
+import java.util.zip.CRC32C;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -78,15 +80,8 @@ public class MapStorageRequestHandler implements HttpRequestHandler {
                 CompressedInputStream in = gridStorage.read(x, z);
                 if (in == null) return new HttpResponse(HttpStatusCode.NO_CONTENT);
 
-                HttpResponse response = new HttpResponse(HttpStatusCode.OK);
-                response.addHeader("Cache-Control", "public");
-                response.addHeader("Cache-Control", "max-age=" + TimeUnit.DAYS.toSeconds(1));
-
-                if (lod == 0) response.addHeader("Content-Type", "application/octet-stream");
-                else response.addHeader("Content-Type", "image/png");
-
-                writeToResponse(in, response, request);
-                return response;
+                String contentType = lod == 0 ? "application/octet-stream" : "image/png";
+                return createCacheableResponse(in, request, contentType);
             }
 
             // provide meta-data
@@ -98,12 +93,7 @@ public class MapStorageRequestHandler implements HttpRequestHandler {
                 default -> path.startsWith("assets/") ? mapStorage.asset(path.substring(7)).read() : null;
             };
             if (in != null){
-                HttpResponse response = new HttpResponse(HttpStatusCode.OK);
-                response.addHeader("Cache-Control", "public");
-                response.addHeader("Cache-Control", "max-age=" + TimeUnit.DAYS.toSeconds(1));
-                response.addHeader("Content-Type", ContentTypeRegistry.fromFileName(path));
-                writeToResponse(in, response, request);
-                return response;
+                return createCacheableResponse(in, request, ContentTypeRegistry.fromFileName(path));
             }
 
         } catch (NumberFormatException | NoSuchElementException ignore){
@@ -138,6 +128,51 @@ public class MapStorageRequestHandler implements HttpRequestHandler {
         } else {
             response.setBody(data.decompress());
         }
+    }
+
+    /**
+     * Buffers the (already compressed) data and serves it with a content-based ETag.
+     * If the client's {@code If-None-Match} header matches that ETag, an empty 304 Not Modified
+     * is returned instead of the body - letting the browser reuse its cached copy and avoiding
+     * re-sending unchanged tiles / meta-files. The webapp re-requests tiles with cache: "no-cache"
+     * whenever a tile is panned back into view, so without this every revisit re-downloaded the
+     * full .prbm even when the tile had not changed.
+     */
+    private HttpResponse createCacheableResponse(CompressedInputStream in, HttpRequest request, String contentType) throws IOException {
+        byte[] data;
+        Compression compression;
+        try (in) {
+            data = in.readAllBytes();
+            compression = in.getCompression();
+        }
+
+        String eTag = eTag(data);
+
+        HttpResponse response;
+        HttpHeader ifNoneMatch = request.getHeader("If-None-Match");
+        if (ifNoneMatch != null && ifNoneMatch.contains(eTag)) {
+            response = new HttpResponse(HttpStatusCode.NOT_MODIFIED);
+        } else {
+            response = new HttpResponse(HttpStatusCode.OK);
+            response.addHeader("Content-Type", contentType);
+            writeToResponse(new CompressedInputStream(new ByteArrayInputStream(data), compression), response, request);
+        }
+
+        response.addHeader("Cache-Control", "public");
+        response.addHeader("Cache-Control", "max-age=" + TimeUnit.DAYS.toSeconds(1));
+        response.addHeader("ETag", eTag);
+        return response;
+    }
+
+    /**
+     * Computes a content-based ETag for the given bytes. Uses CRC32C, which the JVM compiles to a
+     * hardware CRC instruction (SSE4.2 / ARM CRC) and runs over the whole array in a single native
+     * call - this is purely a cache-validator, not a security hash, so speed beats collision-resistance.
+     */
+    private static String eTag(byte[] data) {
+        CRC32C crc = new CRC32C();
+        crc.update(data);
+        return '"' + Long.toHexString(crc.getValue()) + '"';
     }
 
 }
