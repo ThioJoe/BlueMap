@@ -118,46 +118,80 @@ var CSS2DRenderer = function (events = null) {
 
     };
 
-    var renderObject = function ( object, scene, camera, parentVisible ) {
+    var renderObject = function ( object, scene, camera, parentVisible, collected ) {
 
         if ( object instanceof CSS2DObject ) {
 
-            object.events = _this.events;
-
-            object.onBeforeRender( _this, scene, camera );
-
-            vector.setFromMatrixPosition( object.matrixWorld );
-            vector.applyMatrix4( viewProjectionMatrix );
-
             var element = object.element;
-            var style = 'translate(' + ( vector.x * _widthHalf + _widthHalf - object.anchor.x) + 'px,' + ( - vector.y * _heightHalf + _heightHalf - object.anchor.y ) + 'px)';
 
-            element.style.WebkitTransform = style;
-            element.style.MozTransform = style;
-            element.style.oTransform = style;
-            element.style.transform = style;
+            if ( parentVisible && object.visible ) {
 
-            element.style.display = ( parentVisible && object.visible && vector.z >= - 1 && vector.z <= 1 && element.style.opacity !== "0" ) ? '' : 'none';
+                object.events = _this.events;
 
-            var objectData = {
-                distanceToCameraSquared: getDistanceToSquared( camera, object )
-            };
+                object.onBeforeRender( _this, scene, camera );
 
-            cache.objects.set( object, objectData );
+                vector.setFromMatrixPosition( object.matrixWorld );
+                vector.applyMatrix4( viewProjectionMatrix );
 
-            if ( element.parentNode !== domElement ) {
+                var onScreen = ( vector.z >= - 1 && vector.z <= 1 && element.style.opacity !== "0" );
+                var display = onScreen ? '' : 'none';
 
-                domElement.appendChild( element );
+                // Only touch the DOM when a value actually changed. Writing the same
+                // style every frame still forces the browser to recalculate styles,
+                // which is the main cost when there are lots of (html) markers.
+                if ( object._css2dDisplay !== display ) {
+
+                    element.style.display = display;
+                    object._css2dDisplay = display;
+
+                }
+
+                if ( onScreen ) {
+
+                    var transform = 'translate(' + ( vector.x * _widthHalf + _widthHalf - object.anchor.x ) + 'px,' + ( - vector.y * _heightHalf + _heightHalf - object.anchor.y ) + 'px)';
+
+                    if ( object._css2dTransform !== transform ) {
+
+                        element.style.transform = transform;
+                        object._css2dTransform = transform;
+
+                    }
+
+                }
+
+                var objectData = cache.objects.get( object );
+                if ( objectData === undefined ) {
+
+                    objectData = {};
+                    cache.objects.set( object, objectData );
+
+                }
+                objectData.distanceToCameraSquared = getDistanceToSquared( camera, object );
+
+                if ( element.parentNode !== domElement ) {
+
+                    domElement.appendChild( element );
+
+                }
+
+                object.onAfterRender( _this, scene, camera );
+
+                collected.push( object );
+
+            } else if ( object._css2dDisplay !== 'none' ) {
+
+                // Toggled-off marker (or one inside a hidden marker-set): hide it once,
+                // then skip projection / distance / z-ordering entirely - no per-frame work.
+                element.style.display = 'none';
+                object._css2dDisplay = 'none';
 
             }
-
-            object.onAfterRender( _this, scene, camera );
 
         }
 
         for ( var i = 0, l = object.children.length; i < l; i ++ ) {
 
-            renderObject( object.children[ i ], scene, camera, parentVisible && object.visible );
+            renderObject( object.children[ i ], scene, camera, parentVisible && object.visible, collected );
 
         }
 
@@ -179,23 +213,9 @@ var CSS2DRenderer = function (events = null) {
 
     }();
 
-    var filterAndFlatten = function ( scene ) {
+    var zOrder = function ( objects ) {
 
-        var result = [];
-
-        scene.traverse( function ( object ) {
-
-            if ( object instanceof CSS2DObject ) result.push( object );
-
-        } );
-
-        return result;
-
-    };
-
-    var zOrder = function ( scene ) {
-
-        var sorted = filterAndFlatten( scene ).sort( function ( a, b ) {
+        objects.sort( function ( a, b ) {
 
             var distanceA = cache.objects.get( a ).distanceToCameraSquared;
             var distanceB = cache.objects.get( b ).distanceToCameraSquared;
@@ -204,12 +224,19 @@ var CSS2DRenderer = function (events = null) {
 
         } );
 
-        var zMax = sorted.length;
+        var zMax = objects.length;
 
-        for ( var i = 0, l = sorted.length; i < l; i ++ ) {
+        for ( var i = 0, l = objects.length; i < l; i ++ ) {
 
-            let o = sorted[ i ];
-            o.element.style.zIndex = o.disableDepthTest ? zMax + 1 : zMax - i;
+            let o = objects[ i ];
+            let zIndex = o.disableDepthTest ? zMax + 1 : zMax - i;
+
+            if ( o._css2dZIndex !== zIndex ) {
+
+                o.element.style.zIndex = zIndex;
+                o._css2dZIndex = zIndex;
+
+            }
 
         }
 
@@ -223,8 +250,11 @@ var CSS2DRenderer = function (events = null) {
         viewMatrix.copy( camera.matrixWorldInverse );
         viewProjectionMatrix.multiplyMatrices( camera.projectionMatrix, viewMatrix );
 
-        renderObject( scene, scene, camera, true );
-        zOrder( scene );
+        // Collect the visible CSS2D-objects during the single render-traversal
+        // instead of traversing the whole scene a second time just to z-order them.
+        var collected = [];
+        renderObject( scene, scene, camera, true, collected );
+        zOrder( collected );
 
     };
 

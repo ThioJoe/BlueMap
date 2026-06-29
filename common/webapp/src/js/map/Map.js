@@ -87,6 +87,14 @@ export class Map {
 
 		this.raycaster = new Raycaster();
 
+		/**
+		 * Caches {@link terrainHeightAt} results per (rounded) column. Cleared whenever a
+		 * tile loads/unloads (see {@link onTileLoad}/{@link onTileUnload}). Uses the native
+		 * Map (this class is also called "Map").
+		 * @type {globalThis.Map<string, number|boolean>}
+		 */
+		this._terrainHeightCache = new globalThis.Map();
+
 		/** @type {ShaderMaterial[]} */
 		this.hiresMaterial = null;
 		/** @type {ShaderMaterial} */
@@ -216,6 +224,7 @@ export class Map {
 	}
 
 	onTileLoad = layer => tile => {
+		this._terrainHeightCache.clear(); // terrain geometry changed
 		dispatchEvent(this.events, "bluemapMapTileLoaded", {
 			tile: tile,
 			layer: layer
@@ -223,6 +232,7 @@ export class Map {
 	}
 
 	onTileUnload = layer => tile => {
+		this._terrainHeightCache.clear(); // terrain geometry changed
 		dispatchEvent(this.events, "bluemapMapTileUnloaded", {
 			tile: tile,
 			layer: layer
@@ -430,6 +440,32 @@ export class Map {
 	 * @returns {boolean|number}
 	 */
 	terrainHeightAt(x, z) {
+		if (!this.isLoaded) return false;
+
+		// The controls query terrain-height every frame (often twice) to keep the camera
+		// above ground; ray-tracing the full-res tile mesh is by far the most expensive
+		// thing the client does. Cache per (rounded) column so a static camera reuses the
+		// result instead of re-raycasting every frame. Invalidated on tile load/unload.
+		let key = Math.round(x) + "," + Math.round(z);
+		let cached = this._terrainHeightCache.get(key);
+		if (cached !== undefined) return cached;
+
+		let result = this._terrainHeightAtUncached(x, z);
+
+		if (this._terrainHeightCache.size >= 8192) this._terrainHeightCache.clear(); // bound growth while panning
+		this._terrainHeightCache.set(key, result);
+
+		return result;
+	}
+
+	/**
+	 * Ray-traces and returns the terrain-height at a specific location, returns <code>false</code>
+	 * if there is no map-tile loaded at that location. Prefer {@link terrainHeightAt} (cached).
+	 * @param x {number}
+	 * @param z {number}
+	 * @returns {boolean|number}
+	 */
+	_terrainHeightAtUncached(x, z) {
 		if (!this.isLoaded) return false;
 
 		this.raycaster.set(
