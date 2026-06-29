@@ -649,6 +649,8 @@ export class BlueMapApp {
         this.mapViewer.superSampling = this.loadUserSetting("superSampling", this.mapViewer.data.superSampling);
         this.mapViewer.data.loadedHiresViewDistance = this.loadUserSetting("hiresViewDistance", this.mapViewer.data.loadedHiresViewDistance);
         this.mapViewer.data.loadedLowresViewDistance = this.loadUserSetting("lowresViewDistance", this.mapViewer.data.loadedLowresViewDistance);
+        this.mapViewer.data.loadedHiresCacheSize = this.loadUserSetting("hiresCacheSize", this.mapViewer.data.loadedHiresCacheSize);
+        this.mapViewer.applyHiresCacheSize();
         this.mapViewer.updateLoadedMapArea();
         this.appState.controls.mouseSensitivity = this.loadUserSetting("mouseSensitivity", this.appState.controls.mouseSensitivity);
         this.appState.controls.invertMouse = this.loadUserSetting("invertMouse", this.appState.controls.invertMouse);
@@ -672,6 +674,7 @@ export class BlueMapApp {
         this.saveUserSetting("superSampling", this.mapViewer.data.superSampling);
         this.saveUserSetting("hiresViewDistance", this.mapViewer.data.loadedHiresViewDistance);
         this.saveUserSetting("lowresViewDistance", this.mapViewer.data.loadedLowresViewDistance);
+        this.saveUserSetting("hiresCacheSize", this.mapViewer.data.loadedHiresCacheSize);
         this.saveUserSetting("mouseSensitivity", this.appState.controls.mouseSensitivity);
         this.saveUserSetting("invertMouse", this.appState.controls.invertMouse);
         this.saveUserSetting("pauseTileLoading", this.appState.controls.pauseTileLoading);

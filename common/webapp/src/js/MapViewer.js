@@ -77,6 +77,10 @@ export class MapViewer {
 			loadedCenter: new Vector2(0, 0),
 			loadedHiresViewDistance: 200,
 			loadedLowresViewDistance: 2000,
+			// max video-memory (in MB) of hires tiles to keep cached when panned out of view
+			loadedHiresCacheSize: 256,
+			// live readout of the hires tile-cache usage (in MB)
+			hiresCacheUsage: 0,
 		});
 
 		/** @import { RevalidatingFileLoader } from "./util/RevalidatingFileLoader" */
@@ -124,6 +128,7 @@ export class MapViewer {
 		this.lastRedrawChange = 0;
 		events.addEventListener("bluemapCameraMoved", this.redraw)
 		events.addEventListener("bluemapTileLoaded", this.redraw)
+		events.addEventListener("bluemapTileLoaded", () => this.updateHiresCacheUsage())
 
 		// initialize
 		this.initializeRootElement();
@@ -425,6 +430,8 @@ export class MapViewer {
 					this.data.uniforms.hiresTileMap.value.scale.set(map.data.hires.tileSize.x, map.data.hires.tileSize.z);
 					this.data.uniforms.hiresTileMap.value.translate.set(map.data.hires.translate.x, map.data.hires.translate.z);
 
+					this.applyHiresCacheSize();
+
 					setTimeout(this.updateLoadedMapArea);
 
 					this.data.mapState = "loaded";
@@ -465,6 +472,7 @@ export class MapViewer {
 		} else {
 			this.map.loadMapArea(this.data.loadedCenter.x, this.data.loadedCenter.y, 0, this.data.loadedLowresViewDistance);
 		}
+		this.updateHiresCacheUsage();
 	}
 
 	clearTileCache() {
@@ -475,6 +483,26 @@ export class MapViewer {
 			}
 			this.map.hiresTileManager.tileLoader.revalidatedUrls = this.revalidatedUrls;
 		}
+	}
+
+	/**
+	 * Applies the configured hires tile-cache size (data.loadedHiresCacheSize, in MB) to the
+	 * current map's hires tile-manager and evicts anything now over budget.
+	 */
+	applyHiresCacheSize() {
+		if (!this.map || !this.map.hiresTileManager) return;
+		let mb = Math.max(0, this.data.loadedHiresCacheSize || 0);
+		this.map.hiresTileManager.maxCacheBytes = mb * 1024 * 1024;
+		this.map.hiresTileManager.evictOverBudget();
+		this.updateHiresCacheUsage();
+	}
+
+	/**
+	 * Refreshes the live hires tile-cache usage readout (data.hiresCacheUsage, in MB).
+	 */
+	updateHiresCacheUsage() {
+		let bytes = this.map && this.map.hiresTileManager ? this.map.hiresTileManager.cacheBytes : 0;
+		this.data.hiresCacheUsage = Math.round(bytes / (1024 * 1024) * 10) / 10;
 	}
 
 	/**

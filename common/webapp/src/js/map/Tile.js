@@ -44,6 +44,7 @@ export class Tile {
 
         this.unloaded = true;
         this.loading = false;
+        this.refreshing = false;
     }
 
     /**
@@ -71,6 +72,42 @@ export class Tile {
             })
             .finally(() => {
                 this.loading = false;
+            });
+    }
+
+    /**
+     * Re-fetches this tile and swaps in the new model only once it has finished loading, so the
+     * currently-displayed model stays visible until then (no drop to lowres). Used when a retained
+     * (cached) tile is panned back into view to pick up any map changes. On failure the old model
+     * is kept.
+     * @param tileLoader {TileLoader}
+     * @returns {Promise<void>}
+     */
+    refresh(tileLoader) {
+        if (this.loading || this.refreshing || !this.model) return Promise.resolve();
+        // Note: this deliberately does NOT set `this.loading`. While refreshing, the tile still has
+        // a valid model on screen, so it must keep counting as "loaded" everywhere (so the
+        // TileManager keeps it retained and marked on the tile-map instead of unloading it and
+        // dropping back to lowres). `refreshing` only guards against overlapping refreshes.
+        this.refreshing = true;
+
+        return tileLoader.load(this.x, this.z, () => this.unloaded)
+            .then(model => {
+                if (this.unloaded) {
+                    Tile.disposeModel(model);
+                    return;
+                }
+
+                // swap old -> new in a single synchronous step so no empty frame is rendered
+                this.onUnload(this);            // removes the old model from the scene
+                Tile.disposeModel(this.model);  // free the old geometry
+                this.model = model;
+                this.onLoad(this);              // adds the new model to the scene
+            }, () => {
+                // keep the existing model on failure
+            })
+            .finally(() => {
+                this.refreshing = false;
             });
     }
 
