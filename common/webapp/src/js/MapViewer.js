@@ -39,6 +39,21 @@ import {MarkerSet} from "./markers/MarkerSet";
 import {reactive} from "vue";
 import WebGL from "three/addons/capabilities/WebGL";
 
+/**
+ * Minimum time (in ms) between frames rendered while the map is idle (nothing is
+ * actively changing). The loop still renders periodically when idle to advance
+ * texture-animations (water/lava) and to pick up any change that didn't explicitly
+ * request a redraw, but at full framerate that re-runs three.js's whole-scene
+ * matrix-update + draw every frame for no visible change - which is what keeps a
+ * laptop's fans spinning on a completely static map (especially with many markers).
+ * Active interaction always renders at full framerate.
+ *
+ * Higher value = lower idle CPU/GPU at the cost of choppier idle texture-animation.
+ * Set this to Infinity to stop rendering entirely while idle (animations pause until
+ * you next interact) for the absolute lowest idle usage.
+ */
+const IDLE_FRAME_INTERVAL = 100; // ~10 fps
+
 export class MapViewer {
 
 	/**
@@ -307,7 +322,7 @@ export class MapViewer {
 		}
 
 		// render
-		if (delta >= 50 || Date.now() - this.lastRedrawChange < 1000) {
+		if (delta >= IDLE_FRAME_INTERVAL || Date.now() - this.lastRedrawChange < 1000) {
 			this.lastFrame = now;
 			this.render(delta);
 		}
